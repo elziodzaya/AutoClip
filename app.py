@@ -37,7 +37,8 @@ if video_file:
 
     if st.button("🚀 Generate Subtitle & Short Video"):
         with st.spinner("Transcribing audio..."):
-            model = WhisperModel("small", device="cuda" if os.path.exists('/usr/bin/nvidia-smi') else "cpu")
+            model = WhisperModel("small", device="cpu", compute_type="int8")
+
             segments, info = model.transcribe(video_path, word_timestamps=True)
 
             words = []
