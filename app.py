@@ -6,7 +6,7 @@ import tempfile
 import os
 import math
 import numpy as np
-from faster_whisper import WhisperModel
+import whisper 
 from moviepy.editor import VideoFileClip, CompositeVideoClip, ImageClip
 from PIL import Image, ImageDraw, ImageFont
 
