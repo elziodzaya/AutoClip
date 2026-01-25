@@ -111,16 +111,25 @@ if video_file:
 
     if st.button("🚀 Generate Short Video"):
         with st.spinner("🔍 Transcribing..."):
-            result = model.transcribe(video_path)
+            result = model.transcribe(video_path, word_timestamps=True)
 
             words = []
             for seg in result["segments"]:
-                for w in seg["words"]:
+                if "words" in seg:
+                    for w in seg["words"]:
+                        words.append({
+                            "word": w["word"].strip(),
+                            "start": w["start"],
+                            "end": w["end"]
+                        })
+                else:
+                    # fallback aman
                     words.append({
-                        "word": w["word"].strip(),
-                        "start": w["start"],
-                        "end": w["end"]
+                        "word": seg["text"].strip(),
+                        "start": seg["start"],
+                        "end": seg["end"]
                     })
+
 
         sentences = group_words_to_sentences(words, MAX_CHARS)
 
