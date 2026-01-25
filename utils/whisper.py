@@ -1,8 +1,15 @@
 import whisper
 
-model = whisper.load_model("base")
+_model = None
+
+def get_model():
+    global _model
+    if _model is None:
+        _model = whisper.load_model("base")
+    return _model
 
 def transcribe(video_path):
+    model = get_model()
     result = model.transcribe(
         video_path,
         word_timestamps=True
@@ -16,7 +23,4 @@ def transcribe(video_path):
                 "start": w["start"],
                 "end": w["end"]
             })
-
     return words
-
-
