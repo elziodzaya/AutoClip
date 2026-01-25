@@ -1,4 +1,6 @@
 import streamlit as st
+st.write("🚀 App started")
+
 import tempfile
 from utils.whisper import transcribe
 from utils.video import render
