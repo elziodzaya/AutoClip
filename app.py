@@ -1,132 +1,159 @@
-import streamlit as st
 import os
-import subprocess
+import re
 import uuid
+from datetime import datetime
 
-# =============================
-# KONFIGURASI DASAR
-# =============================
-BASE_DIR = "/content/AutoClip"
-UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
-OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+import streamlit as st
+import requests
+import yt_dlp
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# ===============================
+# CONFIG
+# ===============================
+st.set_page_config(
+    page_title="AutoClip – Short Video Generator",
+    layout="centered"
+)
+
+OUTPUT_DIR = "outputs"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-st.set_page_config(page_title="AutoClip AI", layout="centered")
-st.title("🎬 AutoClip AI (Colab Edition)")
+# ===============================
+# HELPER FUNCTIONS
+# ===============================
+def safe_filename(text, max_len=30):
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9\s-]', '', text)
+    text = re.sub(r'\s+', '_', text.strip())
+    return text[:max_len] if text else "clip"
 
-# =============================
-# UI INPUT
-# =============================
-uploaded_video = st.file_uploader(
-    "Upload video (mp4)",
-    type=["mp4"]
+def generate_filename(title, preset):
+    title_safe = safe_filename(title)
+    preset_safe = safe_filename(preset)
+    uid = uuid.uuid4().hex[:8]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{title_safe}_{preset_safe}_{timestamp}_{uid}.mp4"
+
+def download_direct_video(url, output_path):
+    r = requests.get(url, stream=True, timeout=60)
+    r.raise_for_status()
+    with open(output_path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+
+def download_youtube_video(url, output_path):
+    ydl_opts = {
+        "outtmpl": output_path,
+        "format": "mp4/best",
+        "quiet": True,
+        "merge_output_format": "mp4"
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+
+# ===============================
+# UI
+# ===============================
+st.title("🎬 AutoClip")
+st.caption("Short video generator ala 2short.ai (Colab Friendly)")
+
+video_title = st.text_input(
+    "Judul Video / Podcast",
+    placeholder="Contoh: Podcast AI Paling Lucu"
 )
 
-clip_duration = st.slider(
-    "Durasi clip (detik)",
-    min_value=5,
-    max_value=60,
-    value=15
+preset_name = st.selectbox(
+    "Preset Style",
+    ["Funny", "Podcast", "Motivational", "Karaoke"]
 )
+
+source_type = st.radio(
+    "Sumber Video",
+    ["Upload File", "Link Video"]
+)
+
+uploaded_video = None
+video_url = None
+
+if source_type == "Upload File":
+    uploaded_video = st.file_uploader(
+        "Upload Video (MP4)",
+        type=["mp4"]
+    )
+else:
+    video_url = st.text_input(
+        "Masukkan URL Video",
+        placeholder="https://example.com/video.mp4 atau https://youtube.com/..."
+    )
+    st.caption("⚠️ YouTube hanya video publik & non-restricted")
 
 render_btn = st.button("🚀 Render Video")
 
-# =============================
-# FUNGSI RENDER (FFMPEG)
-# =============================
-def render_video(input_path, output_path, duration):
-    """
-    Render video sederhana:
-    - ambil 0-detik awal
-    - potong sesuai durasi
-    """
-    cmd = f"""
-    ffmpeg -y -i "{input_path}" \
-    -t {duration} \
-    -c:v libx264 -preset veryfast -crf 23 \
-    -c:a aac \
-    "{output_path}"
-    """
+# ===============================
+# RENDER PROCESS
+# ===============================
+if render_btn:
+    if not video_title.strip():
+        st.error("⚠️ Judul video wajib diisi")
+        st.stop()
 
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
+    input_path = os.path.join(OUTPUT_DIR, "input_temp.mp4")
 
-    return result
+    with st.spinner("Menyiapkan video..."):
+        try:
+            if source_type == "Upload File":
+                if not uploaded_video:
+                    st.error("⚠️ Upload video terlebih dahulu")
+                    st.stop()
 
+                with open(input_path, "wb") as f:
+                    f.write(uploaded_video.read())
 
-# =============================
-# AKSI UTAMA
-# =============================
-if render_btn and uploaded_video is not None:
+            else:
+                if not video_url:
+                    st.error("⚠️ URL video wajib diisi")
+                    st.stop()
 
-    # simpan file upload
-    input_video_path = os.path.join(
-        UPLOAD_DIR,
-        f"{uuid.uuid4()}.mp4"
-    )
+                if "youtube.com" in video_url or "youtu.be" in video_url:
+                    download_youtube_video(video_url, input_path)
+                else:
+                    download_direct_video(video_url, input_path)
 
-    with open(input_video_path, "wb") as f:
-        f.write(uploaded_video.read())
+        except Exception as e:
+            st.error(f"❌ Gagal mengambil video: {e}")
+            st.stop()
 
-    output_video_path = os.path.join(
-        OUTPUT_DIR,
-        f"final_{uuid.uuid4()}.mp4"
-    )
+    with st.spinner("Rendering video..."):
+        filename = generate_filename(video_title, preset_name)
+        output_path = os.path.join(OUTPUT_DIR, filename)
 
-    # proses render
-    with st.spinner("⏳ Rendering video..."):
-        result = render_video(
-            input_video_path,
-            output_video_path,
-            clip_duration
-        )
+        # ===============================
+        # PIPELINE RENDER (PLACEHOLDER)
+        # ===============================
+        # GANTI BAGIAN INI DENGAN LOGIC ASLI KAMU
+        import shutil
+        shutil.copy(input_path, output_path)
 
-    # =============================
-    # CEK HASIL
-    # =============================
-    if not os.path.exists(output_video_path):
-        st.error("❌ Render gagal, file output tidak ditemukan")
-        st.text(result.stderr)
-    else:
-        st.success("✅ Render selesai!")
+    st.success("✅ Rendering selesai!")
 
-        # tampilkan video (CARA PALING AMAN)
-        with open(output_video_path, "rb") as video_file:
-            video_bytes = video_file.read()
-            st.video(video_bytes)
+    # ===============================
+    # PREVIEW & DOWNLOAD
+    # ===============================
+    st.video(output_path)
 
-        # tombol download
+    with open(output_path, "rb") as f:
         st.download_button(
             label="⬇️ Download Video",
-            data=video_bytes,
-            file_name="autoclip_result.mp4",
+            data=f,
+            file_name=filename,
             mime="video/mp4"
         )
 
-        # debug opsional
-        with st.expander("🛠 Debug Info"):
-            st.write("Input:", input_video_path)
-            st.write("Output:", output_video_path)
-            st.text(result.stderr)
+    st.caption(f"📁 Disimpan sementara di: `{output_path}`")
 
-else:
-    st.info("⬆️ Upload video lalu klik Render")
-with open(output_video_path, "rb") as video_file:
-    video_bytes = video_file.read()
-
-st.video(video_bytes)
-
-st.download_button(
-    label="⬇️ Download Video",
-    data=video_bytes,
-    file_name="autoclip_result.mp4",
-    mime="video/mp4"
-)
-
+# ===============================
+# FOOTER
+# ===============================
+st.markdown("---")
+st.caption("AutoClip • Streamlit + Google Colab")
