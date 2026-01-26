@@ -1,92 +1,125 @@
-import subprocess
-import cv2
-import mediapipe as mp
-import numpy as np
+# ===============================
+# AutoClip AI - Streamlit App
+# FINAL (Colab Safe)
+# ===============================
+
 import os
-import tempfile
+import uuid
+import subprocess
+from pathlib import Path
+
+# ---- WAJIB DI PALING ATAS (anti crash Colab) ----
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+import streamlit as st
 
 # ===============================
-# FFmpeg + ASS subtitle (LAMA)
+# CONFIG
 # ===============================
-def render(video_path, ass_path, output="output.mp4"):
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", video_path,
-        "-vf", f"scale=1080:1920,ass={ass_path}",
-        output
-    ]
-    subprocess.run(cmd, check=True)
+BASE_DIR = Path(__file__).parent
+UPLOAD_DIR = BASE_DIR / "uploads"
+OUTPUT_DIR = BASE_DIR / "outputs"
+UPLOAD_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(exist_ok=True)
 
+st.set_page_config(
+    page_title="AutoClip AI",
+    layout="centered"
+)
 
 # ===============================
-# PHASE 1: FACE CENTER + AUTO CROP
+# UI HEADER
 # ===============================
-mp_face = mp.solutions.face_detection
+st.title("🎬 AutoClip AI")
+st.caption("Auto crop 9:16 + Karaoke Subtitle (Phase 1)")
+st.success("Streamlit berhasil dimuat")
 
-def detect_face_center(frame, detector):
-    h, w, _ = frame.shape
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    result = detector.process(rgb)
-
-    if result.detections:
-        box = result.detections[0].location_data.relative_bounding_box
-        cx = int((box.xmin + box.width / 2) * w)
-        cy = int((box.ymin + box.height / 2) * h)
-        return cx, cy
-
-    return w // 2, h // 2
-
-
-def crop_9_16(frame, center_x):
-    h, w, _ = frame.shape
-    target_w = int(h * 9 / 16)
-
-    x1 = max(0, center_x - target_w // 2)
-    x2 = min(w, x1 + target_w)
-
-    if x2 - x1 < target_w:
-        x1 = max(0, w - target_w)
-        x2 = w
-
-    return frame[:, x1:x2]
-
-
-def process_video_face_crop(
-    input_path,
-    output_path,
-    detect_every=5
-):
-    cap = cv2.VideoCapture(input_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-
-    target_w = int(h * 9 / 16)
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, fps, (target_w, h))
-
-    face_detector = mp_face.FaceDetection(
+# ===============================
+# LAZY IMPORT (AMAN COLAB)
+# ===============================
+def get_face_detector():
+    import mediapipe as mp
+    return mp.solutions.face_detection.FaceDetection(
         model_selection=0,
         min_detection_confidence=0.5
     )
 
-    last_center_x = w // 2
-    frame_idx = 0
+# ===============================
+# VIDEO PROCESSING
+# ===============================
+def render_video(video_path, output_path):
+    """
+    Phase 1:
+    - crop center
+    - scale 9:16
+    """
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", str(video_path),
+        "-vf", "crop=in_h*9/16:in_h,scale=1080:1920",
+        "-preset", "veryfast",
+        "-movflags", "+faststart",
+        str(output_path)
+    ]
+    subprocess.run(cmd, check=True)
 
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
+# ===============================
+# STREAMLIT UI
+# ===============================
+uploaded_file = st.file_uploader(
+    "📤 Upload video (MP4)",
+    type=["mp4"]
+)
 
-        if frame_idx % detect_every == 0:
-            cx, _ = detect_face_center(frame, face_detector)
-            last_center_x = int(0.7 * last_center_x + 0.3 * cx)
+filename_option = st.radio(
+    "Nama file output",
+    [
+        "Otomatis (UUID)",
+        "Gunakan nama asli + _short"
+    ]
+)
 
-        cropped = crop_9_16(frame, last_center_x)
-        out.write(cropped)
-        frame_idx += 1
+if uploaded_file:
+    video_id = str(uuid.uuid4())[:8]
 
-    cap.release()
-    out.release()
-    face_detector.close()
+    input_path = UPLOAD_DIR / f"{video_id}_{uploaded_file.name}"
+    with open(input_path, "wb") as f:
+        f.write(uploaded_file.read())
+
+    st.video(str(input_path))
+    st.info("Video berhasil diupload")
+
+    if st.button("🚀 Proses Video"):
+        with st.spinner("Rendering video..."):
+            if filename_option.startswith("Gunakan"):
+                out_name = input_path.stem + "_short.mp4"
+            else:
+                out_name = f"autoclip_{video_id}.mp4"
+
+            output_path = OUTPUT_DIR / out_name
+
+            try:
+                render_video(input_path, output_path)
+                st.success("Render selesai!")
+
+                st.video(str(output_path))
+
+                with open(output_path, "rb") as f:
+                    st.download_button(
+                        "⬇️ Download Video",
+                        f,
+                        file_name=out_name,
+                        mime="video/mp4"
+                    )
+
+            except Exception as e:
+                st.error("Terjadi error saat rendering")
+                st.exception(e)
+
+# ===============================
+# FOOTER
+# ===============================
+st.markdown("---")
+st.caption("AutoClip AI • Phase 1 • Built with Streamlit")
