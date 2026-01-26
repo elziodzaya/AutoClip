@@ -118,3 +118,15 @@ if render_btn and uploaded_video is not None:
 
 else:
     st.info("⬆️ Upload video lalu klik Render")
+with open(output_video_path, "rb") as video_file:
+    video_bytes = video_file.read()
+
+st.video(video_bytes)
+
+st.download_button(
+    label="⬇️ Download Video",
+    data=video_bytes,
+    file_name="autoclip_result.mp4",
+    mime="video/mp4"
+)
+
