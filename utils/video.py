@@ -22,7 +22,13 @@ def render(video_path, ass_path, output="output.mp4"):
 # ===============================
 # PHASE 1: FACE CENTER + AUTO CROP
 # ===============================
-mp_face = mp.solutions.face_detection
+try:
+    mp_face = mp.solutions.face_detection
+except AttributeError:
+    raise RuntimeError(
+        "Mediapipe gagal ter-load. Pastikan tidak ada file mediapipe.py "
+        "dan mediapipe sudah terinstall dengan benar."
+    )
 
 def detect_face_center(frame, detector):
     h, w, _ = frame.shape
