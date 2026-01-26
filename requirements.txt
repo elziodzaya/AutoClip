@@ -1,6 +1,9 @@
-streamlit
-openai-whisper
-torch
-ffmpeg-python
+streamlit==1.31.1
+opencv-python-headless
+mediapipe==0.10.13
 moviepy
 numpy
+ffmpeg-python
+yt-dlp
+requests
+protobuf<5
