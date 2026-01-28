@@ -1,7 +1,7 @@
 streamlit==1.31.1
 opencv-python-headless
 mediapipe==0.10.13
-moviepy
+moviepy==.1.0.3
 numpy
 ffmpeg-python
 yt-dlp
