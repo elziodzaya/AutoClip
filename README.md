@@ -5,4 +5,4 @@ colorTo: blue
 sdk: docker
 pinned: false
 license: mit
-short_description: 'This is Autoclip-ai Project.!'
+short_description: 'This is Autoclip-ai Project..!'
