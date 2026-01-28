@@ -1,31 +1,19 @@
 import os
-os.environ["STREAMLIT_SERVER_HEADLESS"] = "true"
-os.environ["STREAMLIT_SERVER_PORT"] = "7860"
-os.environ["STREAMLIT_SERVER_ADDRESS"] = "0.0.0.0"
-
 import streamlit as st
+import numpy as np
+import cv2
+import mediapipe as mp
+from moviepy.editor import VideoFileClip
+import yt_dlp
 
 # ===============================
-# STREAMLIT BASIC CONFIG (WAJIB)
+# STREAMLIT CONFIG
 # ===============================
 st.set_page_config(
     page_title="AutoClip AI",
     page_icon="🎬",
     layout="centered"
 )
-
-# ===============================
-# SAFE IMPORTS (NO CRASH)
-# ===============================
-try:
-    import cv2
-    import mediapipe as mp
-    import numpy as np
-    from moviepy.editor import VideoFileClip
-except Exception as e:
-    st.error("❌ Gagal load library video")
-    st.exception(e)
-    st.stop()
 
 # ===============================
 # FOLDER SETUP
@@ -35,90 +23,152 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ===============================
-# UI HEADER
+# MEDIA PIPE FACE DETECTOR
 # ===============================
-st.title("🎬 AutoClip AI")
-st.caption("Auto crop 9:16 + Subtitle (Phase 1)")
-
-st.markdown(
-    """
-    **Fitur aktif (Phase 1):**
-    - Upload video
-    - Convert ke format Shorts / Reels
-    - Pipeline siap untuk face crop & subtitle
-    """
+mp_face = mp.solutions.face_detection
+face_detector = mp_face.FaceDetection(
+    model_selection=0,
+    min_detection_confidence=0.6
 )
 
-st.divider()
+# ===============================
+# UTILS
+# ===============================
+def download_video_from_url(url, output_dir):
+    ydl_opts = {
+        "outtmpl": os.path.join(output_dir, "input.%(ext)s"),
+        "format": "mp4/best",
+        "quiet": True,
+        "noplaylist": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return ydl.prepare_filename(info)
+
+def get_face_center(frame):
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = face_detector.process(rgb)
+    if not results.detections:
+        return None
+    bbox = results.detections[0].location_data.relative_bounding_box
+    h, w, _ = frame.shape
+    cx = int((bbox.xmin + bbox.width / 2) * w)
+    cy = int((bbox.ymin + bbox.height / 2) * h)
+    return cx, cy
+
+def auto_crop_9_16(frame):
+    h, w, _ = frame.shape
+    target_w = int(h * 9 / 16)
+
+    center = get_face_center(frame)
+    if center:
+        cx, _ = center
+    else:
+        cx = w // 2
+
+    x1 = max(0, cx - target_w // 2)
+    x2 = min(w, x1 + target_w)
+    return frame[:, x1:x2]
 
 # ===============================
-# INPUT SECTION
+# UI
 # ===============================
-uploaded_file = st.file_uploader(
-    "📤 Upload video",
-    type=["mp4", "mov", "mkv"]
+st.title("🎬 AutoClip AI")
+st.caption("Shorts / Reels / TikTok Generator")
+
+st.subheader("📥 Sumber Video")
+source_type = st.radio(
+    "Pilih sumber:",
+    ["Upload File", "Video dari Link"]
+)
+
+uploaded_file = None
+video_url = None
+
+if source_type == "Upload File":
+    uploaded_file = st.file_uploader(
+        "📤 Upload video",
+        type=["mp4", "mov", "mkv"]
+    )
+else:
+    video_url = st.text_input(
+        "🔗 Link YouTube / TikTok",
+        placeholder="https://www.youtube.com/..."
+    )
+
+st.subheader("🎬 Mode Output")
+mode = st.selectbox(
+    "Pilih format:",
+    ["Shorts (9:16)", "Reels (9:16)", "TikTok (9:16)"]
 )
 
 filename = st.text_input(
-    "📝 Nama file output (tanpa .mp4)",
+    "📝 Nama file output",
     value="autoclip_result"
 )
 
 process_btn = st.button("🚀 Proses Video")
 
 # ===============================
-# PROCESSING
+# PROCESS
 # ===============================
 if process_btn:
-    if uploaded_file is None:
-        st.warning("⚠️ Silakan upload video dulu")
+    if source_type == "Upload File" and not uploaded_file:
+        st.warning("⚠️ Upload video dulu")
         st.stop()
 
-    with st.spinner("Memproses video..."):
-        input_path = os.path.join(OUTPUT_DIR, uploaded_file.name)
+    if source_type == "Video dari Link" and not video_url:
+        st.warning("⚠️ Masukkan link video")
+        st.stop()
 
-        with open(input_path, "wb") as f:
-            f.write(uploaded_file.read())
+    with st.spinner("📥 Menyiapkan video..."):
+        if uploaded_file:
+            input_path = os.path.join(OUTPUT_DIR, uploaded_file.name)
+            with open(input_path, "wb") as f:
+                f.write(uploaded_file.read())
+        else:
+            input_path = download_video_from_url(video_url, OUTPUT_DIR)
 
-        try:
-            clip = VideoFileClip(input_path)
+    with st.spinner("🔍 Memproses video..."):
+        clip = VideoFileClip(input_path)
 
-            # --- Phase 1: resize ke 9:16 ---
-            clip_resized = clip.resize(height=1920)
-
-            output_path = os.path.join(
-                OUTPUT_DIR,
-                f"{filename}.mp4"
-            )
-
-            clip_resized.write_videofile(
-                output_path,
-                codec="libx264",
-                audio_codec="aac",
-                verbose=False,
-                logger=None
-            )
-
-        except Exception as e:
-            st.error("❌ Gagal memproses video")
-            st.exception(e)
+        # 🔐 DURASI LIMIT (WAJIB UNTUK HF)
+        if clip.duration > 180:
+            st.error("❌ Video terlalu panjang (maks 3 menit)")
             st.stop()
+
+        fps = clip.fps
+        frames = []
+
+        for t in np.arange(0, clip.duration, 1 / fps * 10):
+            frame = clip.get_frame(t)
+            cropped = auto_crop_9_16(frame)
+            frames.append(cropped)
+
+        h, w, _ = frames[0].shape
+        out_path = os.path.join(OUTPUT_DIR, f"{filename}.mp4")
+
+        out = cv2.VideoWriter(
+            out_path,
+            cv2.VideoWriter_fourcc(*"mp4v"),
+            fps,
+            (w, h)
+        )
+
+        for f in frames:
+            out.write(f)
+
+        out.release()
 
     st.success("✅ Video berhasil diproses!")
 
-    # ===============================
-    # DOWNLOAD
-    # ===============================
-    with open(output_path, "rb") as f:
+    with open(out_path, "rb") as f:
         st.download_button(
-            label="⬇️ Download Video",
+            "⬇️ Download Video",
             data=f,
             file_name=f"{filename}.mp4",
             mime="video/mp4"
         )
 
-# ===============================
-# FOOTER
-# ===============================
 st.divider()
-st.caption("AutoClip AI – Phase 1 | Hugging Face Spaces Ready 🚀")
+st.caption("AutoClip AI | CPU-safe Hugging Face Space 🚀")
