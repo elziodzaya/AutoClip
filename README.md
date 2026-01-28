@@ -1,4 +1,4 @@
-title: Dzaya_AutoClip_AI
+title: Dzaya_AutoClip
 emoji: 🌖
 colorFrom: pink
 colorTo: blue
